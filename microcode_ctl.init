@@ -1,0 +1,74 @@
+#!/bin/bash
+# chkconfig: 2345 0 99
+# description: script to apply cpu microcode
+
+# Check that we're a priviledged user
+[ `id -u` = 0 ] || exit 0
+
+DATAFILE=/lib/firmware/microcode.dat
+
+. /etc/init.d/functions
+
+RETVAL=0
+
+# perform the update
+function start ()
+{
+	RETVAL=1
+	# Make sure we are on an Intel machine
+	vendor=`grep "^vendor_id" /proc/cpuinfo | head -n1 | awk -F ": " '{ print $2 }'`
+	[ "$vendor" != "GenuineIntel" ] && return
+
+	# Microcode wasn't available until 686's.
+	family=`grep "^cpu family" /proc/cpuinfo | head -n1 | awk -F ": " '{ print $2 }'`
+	[ $family -lt 6 ] && return
+
+	echo -n $"Applying Intel CPU microcode update: "
+
+	if [ ! -e $DATAFILE ]; then 
+		echo $"$0: CPU microcode data file not present ($DATAFILE)"
+		exit 1
+	fi
+
+	/sbin/modprobe microcode
+
+	lt=0
+	while [ ! -c /dev/cpu/microcode ]; do
+		lt=$[lt+1];
+		[ $lt -gt 5 ] && break;
+		sleep 0.1;
+	done
+
+	/sbin/microcode_ctl -Qu
+	RETVAL=$?
+
+	/sbin/rmmod microcode
+
+	return $RETVAL
+}
+
+stop()
+{
+	return
+}
+
+case "$1" in
+  start)
+	start
+	exit 0
+	;;
+  stop)
+	stop
+	;;
+  restart|reload|force-reload)
+	stop
+	start
+	;;
+  status)
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|restart}"
+	exit 1
+esac
+exit $?
+
